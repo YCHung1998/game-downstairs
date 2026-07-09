@@ -118,10 +118,21 @@ function draw(s) {
         ctx.beginPath(); ctx.moveTo(p.x + i, p.y + 7); ctx.lineTo(p.x + i + 11, p.y + 7);
         ctx.lineTo(p.x + i + 5.5, p.y - 4); ctx.fill();
       }
-    } else {                                                     // spring
+    } else if (p.kind === "spring") {
       ctx.fillStyle = "#4dabf7"; ctx.fillRect(p.x, p.y + 6, PLAT_W, PLAT_H - 6);
       ctx.fillStyle = "#74c0fc";
       ctx.fillRect(p.x + PLAT_W / 2 - 16, p.y, 32, 7);
+    } else {                                                     // melt（融化台階）
+      if (p.melt !== null) {
+        // 踩到後閃爍警告：剩越少閃越快；閃滅相位跳過不畫
+        const period = p.melt > 0.7 ? 320 : (p.melt > 0.3 ? 160 : 80);
+        if (Math.floor(performance.now() / period) % 2) continue;
+      }
+      ctx.fillStyle = "#f59f00"; ctx.fillRect(p.x, p.y, PLAT_W, PLAT_H);
+      ctx.fillStyle = "#ffd8a8";                                 // 融化滴落感
+      for (let i = 8; i < PLAT_W; i += 22)
+        ctx.fillRect(p.x + i, p.y + PLAT_H, 6, 5 + (i % 3) * 2);
+      ctx.fillStyle = "#fff3bf"; ctx.fillRect(p.x, p.y, PLAT_W, 4);
     }
   }
   // 玩家（受傷無敵幀閃爍）

@@ -2,11 +2,13 @@
 """小朋友下樓梯（NS-Shaft 式）核心邏輯（純 Python，被 Pyodide 載入瀏覽器執行）。
 
 規則：台階持續向上捲動，角色靠重力下落、←→ 移動；
-普通台階回 1 血、尖刺台階扣血（有無敵幀）、彈簧台階反彈；
+普通台階回 1 血、尖刺台階扣血（有無敵幀）、彈簧台階反彈、
+融化台階踩到後閃爍倒數 MELT_SEC 秒消失（不回血）；
 頂部尖刺天花板扣血並下推；掉出畫面底部或血量歸零即死；樓層數＝分數。
+捲動速度隨樓層「指數」成長（BASE×GROWTH^floors），到上限後鎖定，等玩家失誤。
 架構：每幀 JS 只呼叫一次 step(dt, direction) 再取 state() JSON。
 座標：y 向下為正。
-測試：tests/test_downstairs.py（14 案例，fail-then-pass 已驗證）。
+測試：tests/test_downstairs.py（19 案例，fail-then-pass 已驗證）。
 """
 import json
 import random
@@ -25,6 +27,10 @@ SPRING_VY = -430.0
 CEIL_PUSH_VY = 240.0
 IFRAME_SEC = 1.0         # 受傷後無敵秒數
 GAP_Y = 92.0             # 台階垂直間距
+MELT_SEC = 0.5           # 融化台階：踩到後幾秒消失
+SPEED_BASE = 58.0        # 捲動速度指數曲線：BASE × GROWTH^floors，封頂 SPEED_MAX
+SPEED_GROWTH = 1.018
+SPEED_MAX = 165.0
 
 
 class Game:
@@ -54,21 +60,29 @@ class Game:
     # ── 生成 ────────────────────────────────────────────────
     def _spawn(self, x, y, kind):
         self.platforms.append({"x": float(max(0, min(x, W - PLAT_W))), "y": float(y),
-                               "kind": kind, "idx": self._next_idx, "touched": False})
+                               "kind": kind, "idx": self._next_idx, "touched": False,
+                               "melt_t": None})
         self._next_idx += 1
 
     def _spawn_random(self, y):
         x = self._rng() * (W - PLAT_W)
         r = self._rng()
-        kind = "normal" if r < 0.70 else ("spike" if r < 0.85 else "spring")
+        if r < 0.55:
+            kind = "normal"
+        elif r < 0.70:
+            kind = "spike"
+        elif r < 0.85:
+            kind = "spring"
+        else:
+            kind = "melt"
         self._spawn(x, y, kind)
 
-    # ── 難度曲線 ────────────────────────────────────────────
+    # ── 難度曲線（指數成長 → 上限鎖定，等玩家失誤） ─────────
     def scroll_speed(self):
-        return min(58.0 + self.floors * 0.9, self.max_scroll_speed())
+        return min(SPEED_BASE * (SPEED_GROWTH ** self.floors), SPEED_MAX)
 
     def max_scroll_speed(self):
-        return 150.0
+        return SPEED_MAX
 
     # ── 傷害 ────────────────────────────────────────────────
     def _damage(self, amount):
@@ -90,10 +104,14 @@ class Game:
         self.player_x += direction * MOVE_SPEED * dt
         self.player_x = max(0.0, min(self.player_x, W - PLAYER_W))
 
-        # 台階向上捲動
+        # 台階向上捲動＋融化倒數
         v = self.scroll_speed()
         for p in self.platforms:
             p["y"] -= v * dt
+            if p["melt_t"] is not None:
+                p["melt_t"] -= dt
+        self.platforms = [p for p in self.platforms
+                          if p["melt_t"] is None or p["melt_t"] > 0]  # 融完即消失
 
         # 垂直運動與落地判定（用移動前後位置抓「由上而下穿越台階頂」）
         prev_bottom = self.player_y + PLAYER_H
@@ -154,6 +172,9 @@ class Game:
             self.on_ground = True
             if kind == "spike":
                 self._damage(SPIKE_DMG)
+            elif kind == "melt":
+                if p["melt_t"] is None:
+                    p["melt_t"] = MELT_SEC     # 踩到才開始融化，不回血
             elif not p["touched"]:
                 self.hp = min(MAX_HP, self.hp + HEAL)
         if not p["touched"]:
@@ -170,6 +191,7 @@ class Game:
             "floors": self.floors,
             "alive": self.alive,
             "iframe": round(self.iframe, 2),
-            "platforms": [{"x": round(p["x"], 1), "y": round(p["y"], 1), "kind": p["kind"]}
+            "platforms": [{"x": round(p["x"], 1), "y": round(p["y"], 1), "kind": p["kind"],
+                           "melt": None if p["melt_t"] is None else round(p["melt_t"], 2)}
                           for p in self.platforms],
         })

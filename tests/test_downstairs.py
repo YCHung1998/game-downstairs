@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from downstairs import (Game, W, H, PLAYER_W, PLAYER_H, CEIL_Y,
-                        MAX_HP, SPIKE_DMG, CEIL_DMG)
+                        MAX_HP, SPIKE_DMG, CEIL_DMG, MELT_SEC)
 
 
 def seq_rng(values):
@@ -18,7 +18,8 @@ def make_game(rng_vals=None):
 
 
 def put_platform(g, x, y, kind="normal", idx=3):
-    g.platforms.append({"x": x, "y": y, "kind": kind, "idx": idx, "touched": False})
+    g.platforms.append({"x": x, "y": y, "kind": kind, "idx": idx,
+                        "touched": False, "melt_t": None})
 
 
 def drop_player_on(g, plat_x, plat_y, kind="normal", idx=3, frames=90):
@@ -147,13 +148,80 @@ def test_hp_zero_dies():
     assert g.hp == 0 and not g.alive
 
 
-def test_speed_increases_with_depth():
+def test_speed_exponential_then_capped():
     g = make_game()
-    v0 = g.scroll_speed()
-    g.floors = 50
-    assert g.scroll_speed() > v0
-    g.floors = 9999
-    assert g.scroll_speed() <= g.max_scroll_speed()
+    g.floors = 0;  s0 = g.scroll_speed()
+    g.floors = 10; s10 = g.scroll_speed()
+    g.floors = 20; s20 = g.scroll_speed()
+    assert s0 < s10 < s20
+    # 指數性質：等距樓層的成長「倍率」相同（未達上限前）
+    assert abs(s10 / s0 - s20 / s10) < 1e-6
+    # 增量遞增（指數 > 線性）
+    assert (s20 - s10) > (s10 - s0)
+    # 上限鎖定：到頂後恆定
+    g.floors = 500;  cap = g.scroll_speed()
+    g.floors = 5000
+    assert g.scroll_speed() == cap == g.max_scroll_speed()
+
+
+# ────────────────────────── 融化台階 ──────────────────────────
+
+def test_melt_starts_timer_on_landing_not_on_spawn():
+    g = make_game()
+    g.platforms = []
+    put_platform(g, 100, 300, "melt")
+    g.player_x = 300                       # 玩家不在上面
+    g.player_y = 100
+    for _ in range(30):
+        g.step(1 / 60, direction=0)
+    plat = next(p for p in g.platforms if p["kind"] == "melt")
+    assert plat["melt_t"] is None          # 沒人踩不融化
+    g2 = make_game()
+    g2.platforms = []
+    drop_player_on(g2, 100, 300, "melt", frames=30)
+    plat2 = next(p for p in g2.platforms if p["kind"] == "melt")
+    assert plat2["melt_t"] is not None and plat2["melt_t"] < MELT_SEC  # 踩到開始倒數
+
+
+def test_melt_disappears_after_melt_sec_and_player_falls():
+    g = make_game()
+    g.platforms = []
+    drop_player_on(g, 100, 300, "melt", frames=30)
+    for _ in range(int(MELT_SEC * 60) + 30):   # 再等 MELT_SEC＋緩衝
+        g.step(1 / 60, direction=0)
+    assert not any(p["kind"] == "melt" and p["idx"] == 3 for p in g.platforms)  # 消失
+    assert not g.on_ground or g.player_vy > 0  # 人掉下去
+
+
+def test_melt_timer_monotonic_decreases():
+    g = make_game()
+    g.platforms = []
+    drop_player_on(g, 100, 300, "melt", frames=30)
+    plat = next(p for p in g.platforms if p["kind"] == "melt")
+    t1 = plat["melt_t"]
+    for _ in range(30):
+        g.step(1 / 60, direction=0)
+    assert plat["melt_t"] < t1             # 持續倒數、不因站著重置
+
+
+def test_melt_no_heal_but_counts_floor():
+    g = make_game()
+    g.platforms = []
+    g.hp = 5
+    drop_player_on(g, 100, 300, "melt", idx=9, frames=30)
+    assert g.hp == 5                       # 不回血
+    assert g.floors == 9                   # 有計層
+
+
+def test_state_json_includes_melt():
+    import json
+    g = make_game()
+    g.platforms = []
+    drop_player_on(g, 100, 300, "melt", frames=30)
+    s = json.loads(g.state())
+    melt_plats = [p for p in s["platforms"] if p["kind"] == "melt"]
+    assert melt_plats and "melt" in melt_plats[0]
+    assert melt_plats[0]["melt"] is not None
 
 
 def test_platforms_keep_spawning_below():
