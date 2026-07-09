@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>小朋友下樓梯 — Python in Browser</title>
+<style>
+  body { font-family: -apple-system, "PingFang TC", sans-serif; background: #201a2e;
+         display: flex; flex-direction: column; align-items: center; margin: 0; padding: 12px; color: #efe9f7; }
+  h1 { font-size: 1.2rem; margin: 6px 0 2px; }
+  .sub { font-size: .75rem; color: #a89ec4; margin-bottom: 8px; text-align: center; }
+  .sub a { color: #ffd166; }
+  #hud { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; font-size: .95rem; }
+  button { font-size: .9rem; padding: 6px 14px; border: 1px solid #5a4a80; border-radius: 8px;
+           background: #33244f; color: #efe9f7; cursor: pointer; }
+  canvas { border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.5); touch-action: none; max-width: 100%; }
+  #loading { color: #a89ec4; margin-top: 24px; }
+</style>
+</head>
+<body>
+<h1>🧒 小朋友下樓梯</h1>
+<div class="sub">物理與台階由 <b>downstairs.py</b>（真 Python）透過 Pyodide 在瀏覽器執行 ·
+  ←→ / A D 移動，手機按住左右半邊 · <a href="https://ychung1998.github.io/game-portal/">🎮 更多遊戲</a></div>
+<div id="hud">
+  <span>樓層 <b id="floors">0</b></span>
+  <span>最佳 <b id="best">0</b></span>
+  <span id="hp"></span>
+  <button id="sound">🔊</button>
+</div>
+<div id="loading">正在載入 Python 執行環境（Pyodide，首次約 2–5 秒）…</div>
+<canvas id="cv" width="360" height="560" style="display:none"></canvas>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const floorsEl = document.getElementById("floors"), bestEl = document.getElementById("best"),
+      hpEl = document.getElementById("hp");
+const W = 360, H = 560, PW = 24, PH = 24, PLAT_W = 88, PLAT_H = 14, CEIL_Y = 34, MAX_HP = 10;
+let pyodide = null, last = 0, soundOn = true, keys = { left: false, right: false };
+// localStorage 在隱私模式/封鎖 cookie 環境會 throw，一律包 try（抗辯 red-team 發現）
+function loadBest(k) { try { return +(localStorage.getItem(k) || 0); } catch (_) { return 0; } }
+function saveBest(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+let best = loadBest("downstairs_best");
+bestEl.textContent = best;
+function showFatal(err) {
+  const l = document.getElementById("loading");
+  l.style.display = "block";
+  l.textContent = "執行錯誤，請重新整理頁面：" + err;
+}
+
+// ── 音效 ────────────────────────────────────────────
+let actx = null;
+function beep(freq, dur, type = "square", vol = .12, slide = 0) {
+  if (!soundOn) return;
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.value = freq;
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), actx.currentTime + dur);
+  g.gain.setValueAtTime(vol, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001, actx.currentTime + dur);
+  o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + dur);
+}
+document.getElementById("sound").addEventListener("click", (e) => {
+  soundOn = !soundOn; e.target.textContent = soundOn ? "🔊" : "🔇";
+});
+
+// ── 輸入：鍵盤 + 觸控（左右半邊按住） ──────────────
+document.addEventListener("keydown", (e) => {
+  if (e.code === "ArrowLeft" || e.code === "KeyA") { keys.left = true; e.preventDefault(); }
+  if (e.code === "ArrowRight" || e.code === "KeyD") { keys.right = true; e.preventDefault(); }
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = false;
+  if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = false;
+});
+let deadAt = 0;
+cv.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const s = lastState;
+  if (s && !s.alive) {
+    if (performance.now() - deadAt > 500) restart();
+    return;
+  }
+  const x = (e.clientX - cv.getBoundingClientRect().left) * (W / cv.getBoundingClientRect().width);
+  if (x < W / 2) keys.left = true; else keys.right = true;
+});
+["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
+  cv.addEventListener(ev, () => { keys.left = keys.right = false; }));
+
+// ── Python 橋接 ─────────────────────────────────────
+function py(code) { return pyodide.runPython(code); }
+function getState() { return JSON.parse(py("game.state()")); }
+function restart() { py("game.reset()"); prev = null; }
+
+// ── 渲染 ────────────────────────────────────────────
+function drawHearts(hp) {
+  hpEl.textContent = "❤️".repeat(Math.ceil(hp / 2)) + "🖤".repeat(Math.ceil((MAX_HP - hp) / 2));
+}
+function draw(s) {
+  ctx.fillStyle = "#2b2440"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#3a3157";                                     // 磚牆質感
+  for (let y = 0; y < H; y += 28) for (let x = ((y / 28) % 2) * 20; x < W; x += 40)
+    ctx.fillRect(x, y, 18, 10);
+  // 天花板尖刺
+  ctx.fillStyle = "#e8590c";
+  for (let x = 0; x < W; x += 20) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 20, 0); ctx.lineTo(x + 10, CEIL_Y); ctx.fill();
+  }
+  // 台階
+  for (const p of s.platforms) {
+    if (p.kind === "normal") {
+      ctx.fillStyle = "#8d6e42"; ctx.fillRect(p.x, p.y, PLAT_W, PLAT_H);
+      ctx.fillStyle = "#a9854f"; ctx.fillRect(p.x, p.y, PLAT_W, 4);
+    } else if (p.kind === "spike") {
+      ctx.fillStyle = "#5c5470"; ctx.fillRect(p.x, p.y + 6, PLAT_W, PLAT_H - 6);
+      ctx.fillStyle = "#ff6b6b";
+      for (let i = 0; i < PLAT_W; i += 11) {
+        ctx.beginPath(); ctx.moveTo(p.x + i, p.y + 7); ctx.lineTo(p.x + i + 11, p.y + 7);
+        ctx.lineTo(p.x + i + 5.5, p.y - 4); ctx.fill();
+      }
+    } else {                                                     // spring
+      ctx.fillStyle = "#4dabf7"; ctx.fillRect(p.x, p.y + 6, PLAT_W, PLAT_H - 6);
+      ctx.fillStyle = "#74c0fc";
+      ctx.fillRect(p.x + PLAT_W / 2 - 16, p.y, 32, 7);
+    }
+  }
+  // 玩家（受傷無敵幀閃爍）
+  if (!(s.iframe > 0 && Math.floor(performance.now() / 90) % 2)) {
+    ctx.fillStyle = "#ffd43b"; ctx.fillRect(s.player_x, s.player_y, PW, PH);
+    ctx.fillStyle = "#1b1b1b";
+    ctx.fillRect(s.player_x + 5, s.player_y + 7, 4, 4);
+    ctx.fillRect(s.player_x + 15, s.player_y + 7, 4, 4);
+    ctx.fillRect(s.player_x + 7, s.player_y + 16, 10, 3);
+    ctx.fillStyle = "#e8590c"; ctx.fillRect(s.player_x + 2, s.player_y - 5, 20, 6); // 帽子
+  }
+  if (!s.alive) {
+    ctx.fillStyle = "rgba(0,0,0,.65)"; ctx.fillRect(0, H / 2 - 90, W, 130);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 28px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("💀 遊戲結束", W / 2, H / 2 - 48);
+    ctx.font = "20px sans-serif";
+    ctx.fillText(`到達 ${s.floors} 層 ・ 最佳 ${best}`, W / 2, H / 2 - 14);
+    ctx.font = "16px sans-serif";
+    ctx.fillText("點擊重新開始", W / 2, H / 2 + 16);
+  }
+}
+
+// ── 主迴圈 ──────────────────────────────────────────
+let prev = null, lastState = null;
+function loop(t) {
+  try {
+    const dt = Math.min((t - last) / 1000, 0.05); last = t;
+    const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    py(`game.step(${dt.toFixed(5)}, ${dir})`);
+    const s = getState(); lastState = s;
+    if (prev) {
+      if (s.hp < prev.hp) beep(220, .25, "sawtooth", .15, -120);
+      else if (s.hp > prev.hp) beep(660, .1, "triangle", .1);
+      if (s.vy < -300 && prev.vy >= 0) beep(500, .15, "square", .12, 300);   // 彈簧
+      if (s.floors > prev.floors && s.floors % 10 === 0) beep(880, .12, "triangle", .12);
+      if (prev.alive && !s.alive) {
+        beep(160, .5, "sawtooth", .16, -120); deadAt = performance.now();
+        if (s.floors > best) { best = s.floors; saveBest("downstairs_best", best); bestEl.textContent = best; }
+      }
+    }
+    prev = s;
+    floorsEl.textContent = s.floors;
+    drawHearts(s.hp);
+    draw(s);
+    requestAnimationFrame(loop);
+  } catch (err) { showFatal(err); }             // 凍結時給訊息，不無聲卡死
+}
+
+(async () => {
+  pyodide = await loadPyodide();
+  const src = await (await fetch("downstairs.py")).text();
+  pyodide.runPython(src + "\ngame = Game()");
+  document.getElementById("loading").style.display = "none";
+  cv.style.display = "block";
+  last = performance.now();
+  requestAnimationFrame(loop);
+})().catch(err => {
+  document.getElementById("loading").textContent =
+    "載入失敗：" + err + "（若是本機直接開啟檔案，請改用 python3 -m http.server 後從 http://localhost:8000 開啟）";
+});
+</script>
+</body>
+</html>
