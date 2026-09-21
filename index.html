@@ -3,155 +3,1158 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>小朋友下樓梯 — Python in Browser</title>
+<title>小朋友下樓梯</title>
+<meta name="description" content="NS-Shaft 式經典下樓梯遊戲，物理與台階運算在瀏覽器中流暢運行">
+<meta property="og:title" content="小朋友下樓梯">
+<meta property="og:description" content="NS-Shaft 式經典下樓梯遊戲，物理與台階運算在瀏覽器中流暢運行">
 <style>
-  body { font-family: -apple-system, "PingFang TC", sans-serif; background: #201a2e;
-         display: flex; flex-direction: column; align-items: center; margin: 0; padding: 12px; color: #efe9f7; }
-  h1 { font-size: 1.2rem; margin: 6px 0 2px; }
-  .sub { font-size: .75rem; color: #a89ec4; margin-bottom: 8px; text-align: center; }
-  .sub a { color: #ffd166; }
-  #hud { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; font-size: .95rem; }
-  button { font-size: .9rem; padding: 6px 14px; border: 1px solid #5a4a80; border-radius: 8px;
-           background: #33244f; color: #efe9f7; cursor: pointer; }
-  canvas { border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.5); touch-action: none; max-width: 100%; }
-  #loading { color: #a89ec4; margin-top: 24px; }
+  :root {
+    --bg-main: #120e1f;
+    --card-bg: rgba(32, 26, 48, 0.85);
+    --border-color: rgba(147, 112, 219, 0.28);
+    --accent-gold: #ffd166;
+    --accent-cyan: #4cc9f0;
+    --accent-red: #ff4d6d;
+    --accent-green: #06d6a0;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang TC", sans-serif;
+    background: radial-gradient(circle at top center, #24193d 0%, #100b1a 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    padding: 10px 12px 24px;
+    color: #efe9f7;
+    overflow-x: hidden;
+    user-select: none;
+  }
+  .app-header {
+    text-align: center;
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-size: 1.35rem;
+    margin: 4px 0 2px;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #fdfcff;
+    text-shadow: 0 2px 10px rgba(167, 139, 250, 0.4);
+  }
+  .sub {
+    font-size: 0.76rem;
+    color: #a89ec4;
+    margin-bottom: 8px;
+    text-align: center;
+    max-width: 380px;
+    line-height: 1.4;
+  }
+  .sub a { color: var(--accent-gold); text-decoration: none; font-weight: 500; }
+  .sub a:hover { text-decoration: underline; }
+
+  /* 遊戲外框與 HUD */
+  .game-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 100%;
+  }
+  #hud {
+    width: 360px;
+    max-width: 100%;
+    background: var(--card-bg);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 8px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  }
+  .hud-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .hud-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    color: #9d8ec2;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+  }
+  .hud-value {
+    font-size: 1.15rem;
+    font-weight: 800;
+    font-family: ui-monospace, monospace;
+    color: #fff;
+    line-height: 1.2;
+  }
+  .hud-value.gold { color: var(--accent-gold); text-shadow: 0 0 10px rgba(255, 209, 102, 0.5); }
+  .hud-value.cyan { color: var(--accent-cyan); text-shadow: 0 0 10px rgba(76, 201, 240, 0.5); }
+
+  #hearts-container {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .heart-icon {
+    font-size: 1.05rem;
+    display: inline-block;
+    transition: transform 0.15s ease;
+  }
+  .heart-icon.beat { transform: scale(1.25); }
+
+  .sound-btn {
+    font-size: 0.9rem;
+    padding: 5px 10px;
+    border: 1px solid rgba(168, 139, 250, 0.3);
+    border-radius: 8px;
+    background: rgba(67, 51, 98, 0.6);
+    color: #efe9f7;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sound-btn:hover { background: rgba(88, 68, 128, 0.9); border-color: rgba(168, 139, 250, 0.6); }
+
+  /* 畫布框架 */
+  .canvas-wrapper {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(168, 139, 250, 0.25);
+    background: #171224;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+    max-width: 100%;
+    aspect-ratio: 360 / 560;
+  }
+
+  /* 行動裝置觸控輔助按鍵 */
+  .touch-controls {
+    display: flex;
+    gap: 12px;
+    width: 360px;
+    max-width: 100%;
+    margin-top: 10px;
+  }
+  .touch-btn {
+    flex: 1;
+    height: 48px;
+    background: rgba(43, 33, 67, 0.7);
+    border: 1px solid rgba(147, 112, 219, 0.25);
+    border-radius: 10px;
+    color: #c9bede;
+    font-size: 0.95rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    touch-action: none;
+  }
+  .touch-btn:active, .touch-btn.active {
+    background: rgba(124, 77, 255, 0.4);
+    border-color: var(--accent-cyan);
+    color: #fff;
+    transform: scale(0.98);
+    box-shadow: 0 0 12px rgba(76, 201, 240, 0.4);
+  }
+
+  #loading-view {
+    position: absolute;
+    inset: 0;
+    background: rgba(22, 17, 34, 0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 10;
+    padding: 24px;
+    text-align: center;
+    color: #c4b5e0;
+  }
+  .spinner {
+    width: 38px;
+    height: 38px;
+    border: 3px solid rgba(168, 139, 250, 0.2);
+    border-top-color: var(--accent-cyan);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .footer-hints {
+    font-size: 0.72rem;
+    color: #7d7296;
+    margin-top: 10px;
+    text-align: center;
+  }
 </style>
 </head>
 <body>
-<h1>🧒 小朋友下樓梯</h1>
-<div class="sub">物理與台階由 <b>downstairs.py</b>（真 Python）透過 Pyodide 在瀏覽器執行 ·
-  ←→ / A D 移動，手機按住左右半邊 · <a href="https://ychung1998.github.io/game-portal/">🎮 更多遊戲</a></div>
-<div id="hud">
-  <span>樓層 <b id="floors">0</b></span>
-  <span>最佳 <b id="best">0</b></span>
-  <span id="hp"></span>
-  <button id="sound">🔊</button>
+
+<div class="app-header">
+  <h1>🧒 小朋友下樓梯</h1>
+  <div class="sub">
+    經典物理核心與台階演算法由 <b>downstairs.py</b> 透過 Pyodide 運行 ·
+    <a href="https://ychung1998.github.io/game-portal/" target="_blank">🎮 更多遊戲</a>
+  </div>
 </div>
-<div id="loading">正在載入 Python 執行環境（Pyodide，首次約 2–5 秒）…</div>
-<canvas id="cv" width="360" height="560" style="display:none"></canvas>
+
+<div class="game-container">
+  <div id="hud">
+    <div class="hud-badge">
+      <span class="hud-label">FLOOR</span>
+      <span id="floors" class="hud-value cyan">0</span>
+    </div>
+    <div class="hud-badge" style="align-items: center;">
+      <span class="hud-label" style="margin-bottom: 2px;">HEALTH</span>
+      <div id="hearts-container"></div>
+    </div>
+    <div class="hud-badge" style="align-items: flex-end;">
+      <span class="hud-label">BEST</span>
+      <span id="best" class="hud-value gold">0</span>
+    </div>
+    <button id="sound" class="sound-btn" title="切換音效">🔊</button>
+  </div>
+
+  <div class="canvas-wrapper">
+    <div id="loading-view">
+      <div class="spinner"></div>
+      <div id="loading-text">正在啟動 Python 物理引擎…</div>
+    </div>
+    <canvas id="cv" width="360" height="560"></canvas>
+  </div>
+
+  <div class="touch-controls" id="touch-pad">
+    <div class="touch-btn" id="btn-left">◄ 向左移</div>
+    <div class="touch-btn" id="btn-right">向右移 ►</div>
+  </div>
+  <div class="footer-hints">鍵盤 ← → 或 A D 移動 · 死亡後按 空白鍵 / 點擊螢幕重玩</div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const floorsEl = document.getElementById("floors"), bestEl = document.getElementById("best"),
-      hpEl = document.getElementById("hp");
+      heartsEl = document.getElementById("hearts-container");
 const W = 360, H = 560, PW = 24, PH = 24, PLAT_W = 88, PLAT_H = 14, CEIL_Y = 34, MAX_HP = 10;
-let pyodide = null, last = 0, soundOn = true, keys = { left: false, right: false };
-// localStorage 在隱私模式/封鎖 cookie 環境會 throw，一律包 try（抗辯 red-team 發現）
+
+let pyodide = null, last = 0, soundOn = true;
+let keys = { left: false, right: false };
+let facing = 1; // 1: right, -1: left
+let playerSquashX = 1.0, playerSquashY = 1.0;
+let deadAt = 0, isNewRecord = false;
+let gameOverRollScore = 0;
+
+// 震動與特效狀態
+let screenShake = 0;
+let particles = [];
+let milestoneText = null;
+let milestoneTimer = 0;
+
+// 本地紀錄防護
 function loadBest(k) { try { return +(localStorage.getItem(k) || 0); } catch (_) { return 0; } }
 function saveBest(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
 let best = loadBest("downstairs_best");
 bestEl.textContent = best;
-function showFatal(err) {
-  const l = document.getElementById("loading");
-  l.style.display = "block";
-  l.textContent = "執行錯誤，請重新整理頁面：" + err;
+
+// 觸覺微回饋
+function triggerHaptic(pattern) {
+  try {
+    if ("vibrate" in navigator && navigator.vibrate) {
+      navigator.vibrate(pattern);
+    }
+  } catch (_) {}
 }
 
-// ── 音效 ────────────────────────────────────────────
+// ── 音效合成引擎 (Web Audio API) ────────────────────
 let actx = null;
-function beep(freq, dur, type = "square", vol = .12, slide = 0) {
-  if (!soundOn) return;
-  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-  const o = actx.createOscillator(), g = actx.createGain();
-  o.type = type; o.frequency.value = freq;
-  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), actx.currentTime + dur);
-  g.gain.setValueAtTime(vol, actx.currentTime);
-  g.gain.exponentialRampToValueAtTime(.001, actx.currentTime + dur);
-  o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + dur);
+function getAudioContext() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state === "suspended") actx.resume();
+  return actx;
 }
+
+function playTone(freq, dur, type = "sine", vol = 0.15, slide = 0) {
+  if (!soundOn) return;
+  try {
+    const ctxA = getAudioContext();
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctxA.currentTime);
+    if (slide) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), ctxA.currentTime + dur);
+    }
+    gain.gain.setValueAtTime(vol, ctxA.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctxA.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctxA.destination);
+    osc.start();
+    osc.stop(ctxA.currentTime + dur);
+  } catch (_) {}
+}
+
+const AudioSFX = {
+  land() {
+    playTone(180, 0.08, "triangle", 0.09, -80);
+  },
+  spring() {
+    playTone(340, 0.18, "sine", 0.16, 420);
+    setTimeout(() => playTone(680, 0.14, "triangle", 0.1, 150), 30);
+  },
+  heal() {
+    playTone(523, 0.09, "sine", 0.12);
+    setTimeout(() => playTone(659, 0.14, "triangle", 0.14), 70);
+  },
+  hurt() {
+    playTone(190, 0.22, "sawtooth", 0.2, -110);
+  },
+  ceilSlam() {
+    playTone(140, 0.3, "sawtooth", 0.25, -90);
+    setTimeout(() => playTone(80, 0.2, "triangle", 0.2, -40), 40);
+  },
+  milestone() {
+    playTone(523, 0.1, "triangle", 0.15);
+    setTimeout(() => playTone(659, 0.1, "triangle", 0.15), 80);
+    setTimeout(() => playTone(784, 0.2, "triangle", 0.18), 160);
+  },
+  gameOver() {
+    playTone(320, 0.15, "sawtooth", 0.16, -60);
+    setTimeout(() => playTone(240, 0.2, "sawtooth", 0.18, -80), 120);
+    setTimeout(() => playTone(160, 0.4, "sawtooth", 0.2, -90), 280);
+  },
+  newRecord() {
+    playTone(523, 0.1, "sine", 0.18);
+    setTimeout(() => playTone(659, 0.1, "sine", 0.18), 90);
+    setTimeout(() => playTone(784, 0.12, "sine", 0.2), 180);
+    setTimeout(() => playTone(1046, 0.3, "triangle", 0.25), 270);
+  }
+};
+
 document.getElementById("sound").addEventListener("click", (e) => {
-  soundOn = !soundOn; e.target.textContent = soundOn ? "🔊" : "🔇";
+  soundOn = !soundOn;
+  e.target.textContent = soundOn ? "🔊" : "🔇";
+  if (soundOn) getAudioContext();
 });
 
-// ── 輸入：鍵盤 + 觸控（左右半邊按住） ──────────────
+// ── 粒子特效系統 ────────────────────────────────────
+function addParticle(x, y, vx, vy, color, size, life, gravity = 0) {
+  particles.push({ x, y, vx, vy, color, size, life, maxLife: life, gravity });
+}
+
+function spawnLandingDust(x, y) {
+  for (let i = 0; i < 6; i++) {
+    const vx = (Math.random() - 0.5) * 60;
+    const vy = -Math.random() * 25 - 5;
+    addParticle(x + (Math.random() * 16 - 8), y, vx, vy, "rgba(200, 180, 220, 0.6)", 3, 0.35, 80);
+  }
+}
+
+function spawnSpringSparks(x, y) {
+  for (let i = 0; i < 12; i++) {
+    const angle = (Math.PI / 12) * i + Math.PI;
+    const speed = Math.random() * 120 + 60;
+    addParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed * 0.5, "#74c0fc", 3.5, 0.4, 150);
+  }
+}
+
+function spawnHurtSparks(x, y) {
+  for (let i = 0; i < 14; i++) {
+    const vx = (Math.random() - 0.5) * 160;
+    const vy = (Math.random() - 0.5) * 160;
+    addParticle(x, y, vx, vy, Math.random() > 0.5 ? "#ff6b6b" : "#ffd43b", 4, 0.45, 120);
+  }
+}
+
+function spawnMeltDebris(x, y) {
+  for (let i = 0; i < 4; i++) {
+    addParticle(x + Math.random() * PLAT_W, y + PLAT_H, (Math.random() - 0.5) * 30, Math.random() * 40 + 20, "#ffa94d", 3, 0.5, 180);
+  }
+}
+
+function spawnRecordConfetti() {
+  const colors = ["#ffd43b", "#ff6b6b", "#4dabf7", "#69db7c", "#da77f2"];
+  for (let i = 0; i < 36; i++) {
+    const vx = (Math.random() - 0.5) * 220;
+    const vy = -Math.random() * 200 - 80;
+    addParticle(W / 2, H / 2, vx, vy, colors[Math.floor(Math.random() * colors.length)], Math.random() * 5 + 3, 1.2, 280);
+  }
+}
+
+function updateAndDrawParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += p.gravity * dt;
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.5 + alpha * 0.5), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── 備用遊戲引擎（同 downstairs.py 物理）───────────
+const SPIKE_DMG = 3, CEIL_DMG = 3, HEAL = 1, GRAVITY = 1250.0, MOVE_SPEED = 230.0;
+const SPRING_VY = -430.0, CEIL_PUSH_VY = 240.0, IFRAME_SEC = 1.0, GAP_Y = 92.0;
+const MELT_SEC = 0.5, SPEED_BASE = 58.0, SPEED_GROWTH = 1.018, SPEED_MAX = 165.0;
+
+class FallbackGame {
+  constructor(rng = Math.random) {
+    this._rng = rng;
+    this.reset();
+  }
+  reset() {
+    this.player_x = W / 2 - PW / 2;
+    this.player_y = H * 0.35;
+    this.player_vy = 0.0;
+    this.hp = MAX_HP;
+    this.floors = 0;
+    this.alive = true;
+    this.on_ground = false;
+    this.iframe = 0.0;
+    this._next_idx = 0;
+    this.platforms = [];
+    this._spawn(this.player_x - (PLAT_W - PW) / 2, H * 0.35 + PH, "normal");
+    let y = H * 0.35 + PH + GAP_Y;
+    while (y < H + GAP_Y) {
+      this._spawn_random(y);
+      y += GAP_Y;
+    }
+  }
+  _spawn(x, y, kind) {
+    this.platforms.push({
+      x: Math.max(0, Math.min(x, W - PLAT_W)),
+      y: y,
+      kind: kind,
+      idx: this._next_idx++,
+      touched: false,
+      melt_t: null
+    });
+  }
+  _spawn_random(y) {
+    const x = this._rng() * (W - PLAT_W);
+    const r = this._rng();
+    let kind = "normal";
+    if (r < 0.55) kind = "normal";
+    else if (r < 0.70) kind = "spike";
+    else if (r < 0.85) kind = "spring";
+    else kind = "melt";
+    this._spawn(x, y, kind);
+  }
+  scroll_speed() {
+    return Math.min(SPEED_BASE * Math.pow(SPEED_GROWTH, this.floors), SPEED_MAX);
+  }
+  _damage(amount) {
+    if (this.iframe > 0) return;
+    this.hp = Math.max(0, this.hp - amount);
+    this.iframe = IFRAME_SEC;
+    if (this.hp === 0) this.alive = false;
+  }
+  step(dt, direction = 0) {
+    if (!this.alive) return;
+    this.iframe = Math.max(0, this.iframe - dt);
+    this.player_x += direction * MOVE_SPEED * dt;
+    this.player_x = Math.max(0, Math.min(this.player_x, W - PW));
+
+    const v = this.scroll_speed();
+    for (const p of this.platforms) {
+      p.y -= v * dt;
+      if (p.melt_t !== null) p.melt_t -= dt;
+    }
+    this.platforms = this.platforms.filter(p => p.melt_t === null || p.melt_t > 0);
+
+    const prev_bottom = this.player_y + PH;
+    const plat = this.on_ground ? this._standing_platform(v * dt + 8) : null;
+    if (plat !== null) {
+      this.player_y = plat.y - PH;
+      this.player_vy = 0.0;
+    } else {
+      this.on_ground = false;
+      this.player_vy += GRAVITY * dt;
+      const new_y = this.player_y + this.player_vy * dt;
+      const new_bottom = new_y + PH;
+      let landed = null;
+      if (this.player_vy > 0) {
+        for (const p of this.platforms) {
+          if (p.x - PW * 0.5 < this.player_x && this.player_x < p.x + PLAT_W - PW * 0.5 &&
+              prev_bottom <= p.y + v * dt + 1 && new_bottom >= p.y) {
+            if (landed === null || p.y < landed.y) landed = p;
+          }
+        }
+      }
+      if (landed !== null) {
+        this._land(landed);
+      } else {
+        this.player_y = new_y;
+      }
+    }
+
+    if (this.player_y <= CEIL_Y) {
+      this.player_y = CEIL_Y;
+      this._damage(CEIL_DMG);
+      this.player_vy = CEIL_PUSH_VY;
+      this.on_ground = false;
+    }
+    if (this.player_y > H + PH) {
+      this.alive = false;
+    }
+
+    this.platforms = this.platforms.filter(p => p.y > -PLAT_H);
+    let maxY = this.platforms.reduce((m, p) => Math.max(m, p.y), 0);
+    while (maxY < H) {
+      this._spawn_random(maxY + GAP_Y);
+      maxY = this.platforms.reduce((m, p) => Math.max(m, p.y), 0);
+    }
+  }
+  _standing_platform(tol) {
+    for (const p of this.platforms) {
+      if (p.x - PW * 0.5 < this.player_x && this.player_x < p.x + PLAT_W - PW * 0.5 &&
+          Math.abs((this.player_y + PH) - p.y) <= tol) {
+        return p;
+      }
+    }
+    return null;
+  }
+  _land(p) {
+    this.player_y = p.y - PH;
+    this.player_vy = 0.0;
+    if (p.kind === "spring") {
+      this.player_vy = SPRING_VY;
+      this.on_ground = false;
+    } else {
+      this.on_ground = true;
+      if (p.kind === "spike") {
+        this._damage(SPIKE_DMG);
+      } else if (p.kind === "melt") {
+        if (p.melt_t === null) p.melt_t = MELT_SEC;
+      } else if (!p.touched) {
+        this.hp = Math.min(MAX_HP, this.hp + HEAL);
+      }
+    }
+    if (!p.touched) {
+      p.touched = true;
+      this.floors = Math.max(this.floors, p.idx);
+    }
+  }
+  state() {
+    return {
+      player_x: Math.round(this.player_x * 10) / 10,
+      player_y: Math.round(this.player_y * 10) / 10,
+      vy: Math.round(this.player_vy * 10) / 10,
+      hp: this.hp,
+      floors: this.floors,
+      alive: this.alive,
+      iframe: Math.round(this.iframe * 100) / 100,
+      platforms: this.platforms.map(p => ({
+        x: Math.round(p.x * 10) / 10,
+        y: Math.round(p.y * 10) / 10,
+        kind: p.kind,
+        melt: p.melt_t === null ? null : Math.round(p.melt_t * 100) / 100
+      }))
+    };
+  }
+}
+
+// ── 執行橋接（優先 Pyodide，失敗自動切換 FallbackGame）──
+let fallbackGame = null;
+function py(code) { if (pyodide) return pyodide.runPython(code); }
+function getState() {
+  if (fallbackGame) return fallbackGame.state();
+  return JSON.parse(py("game.state()"));
+}
+function restart() {
+  if (fallbackGame) fallbackGame.reset();
+  else if (pyodide) py("game.reset()");
+  prev = null;
+  playerSquashX = 1; playerSquashY = 1;
+  particles = [];
+  milestoneText = null;
+  isNewRecord = false;
+  gameOverRollScore = 0;
+}
+function stepGame(dt, dir) {
+  if (fallbackGame) fallbackGame.step(dt, dir);
+  else py(`game.step(${dt.toFixed(5)}, ${dir})`);
+}
+
+// ── 輸入控制 ────────────────────────────────────────
+const btnLeft = document.getElementById("btn-left");
+const btnRight = document.getElementById("btn-right");
+
+function updateControlsUI() {
+  if (btnLeft) btnLeft.classList.toggle("active", keys.left);
+  if (btnRight) btnRight.classList.toggle("active", keys.right);
+}
+
 document.addEventListener("keydown", (e) => {
-  if (e.code === "ArrowLeft" || e.code === "KeyA") { keys.left = true; e.preventDefault(); }
-  if (e.code === "ArrowRight" || e.code === "KeyD") { keys.right = true; e.preventDefault(); }
+  if (e.code === "ArrowLeft" || e.code === "KeyA") {
+    keys.left = true; facing = -1; e.preventDefault();
+  }
+  if (e.code === "ArrowRight" || e.code === "KeyD") {
+    keys.right = true; facing = 1; e.preventDefault();
+  }
+  if ((e.code === "Space" || e.code === "Enter") && lastState && !lastState.alive) {
+    if (performance.now() - deadAt > 400) restart();
+    e.preventDefault();
+  }
+  updateControlsUI();
 });
+
 document.addEventListener("keyup", (e) => {
   if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = false;
   if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = false;
+  updateControlsUI();
 });
-let deadAt = 0;
+
+// 點擊 Canvas
 cv.addEventListener("pointerdown", (e) => {
   e.preventDefault();
+  getAudioContext();
   const s = lastState;
   if (s && !s.alive) {
-    if (performance.now() - deadAt > 500) restart();
+    if (performance.now() - deadAt > 400) restart();
     return;
   }
-  const x = (e.clientX - cv.getBoundingClientRect().left) * (W / cv.getBoundingClientRect().width);
-  if (x < W / 2) keys.left = true; else keys.right = true;
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (W / rect.width);
+  if (x < W / 2) { keys.left = true; facing = -1; }
+  else { keys.right = true; facing = 1; }
+  updateControlsUI();
 });
-["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
-  cv.addEventListener(ev, () => { keys.left = keys.right = false; }));
 
-// ── Python 橋接 ─────────────────────────────────────
-function py(code) { return pyodide.runPython(code); }
-function getState() { return JSON.parse(py("game.state()")); }
-function restart() { py("game.reset()"); prev = null; }
+["pointerup", "pointercancel", "pointerleave"].forEach(ev => {
+  cv.addEventListener(ev, () => {
+    keys.left = keys.right = false;
+    updateControlsUI();
+  });
+});
 
-// ── 渲染 ────────────────────────────────────────────
-function drawHearts(hp) {
-  hpEl.textContent = "❤️".repeat(Math.ceil(hp / 2)) + "🖤".repeat(Math.ceil((MAX_HP - hp) / 2));
-}
-function draw(s) {
-  ctx.fillStyle = "#2b2440"; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "#3a3157";                                     // 磚牆質感
-  for (let y = 0; y < H; y += 28) for (let x = ((y / 28) % 2) * 20; x < W; x += 40)
-    ctx.fillRect(x, y, 18, 10);
-  // 天花板尖刺
-  ctx.fillStyle = "#e8590c";
-  for (let x = 0; x < W; x += 20) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 20, 0); ctx.lineTo(x + 10, CEIL_Y); ctx.fill();
+// 觸控按鈕綁定
+btnLeft.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); getAudioContext();
+  keys.left = true; facing = -1; updateControlsUI();
+});
+btnRight.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); getAudioContext();
+  keys.right = true; facing = 1; updateControlsUI();
+});
+[btnLeft, btnRight].forEach(btn => {
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => {
+    btn.addEventListener(ev, () => {
+      keys.left = keys.right = false;
+      updateControlsUI();
+    });
+  });
+});
+
+// ── HUD 愛心渲染 ────────────────────────────────────
+function renderHearts(hp) {
+  const full = Math.floor(hp / 2);
+  const half = hp % 2;
+  let html = "";
+  for (let i = 0; i < 5; i++) {
+    if (i < full) html += `<span class="heart-icon">❤️</span>`;
+    else if (i === full && half) html += `<span class="heart-icon">💔</span>`;
+    else html += `<span class="heart-icon" style="opacity: 0.25; filter: grayscale(1);">🖤</span>`;
   }
-  // 台階
-  for (const p of s.platforms) {
-    if (p.kind === "normal") {
-      ctx.fillStyle = "#8d6e42"; ctx.fillRect(p.x, p.y, PLAT_W, PLAT_H);
-      ctx.fillStyle = "#a9854f"; ctx.fillRect(p.x, p.y, PLAT_W, 4);
-    } else if (p.kind === "spike") {
-      ctx.fillStyle = "#5c5470"; ctx.fillRect(p.x, p.y + 6, PLAT_W, PLAT_H - 6);
-      ctx.fillStyle = "#ff6b6b";
-      for (let i = 0; i < PLAT_W; i += 11) {
-        ctx.beginPath(); ctx.moveTo(p.x + i, p.y + 7); ctx.lineTo(p.x + i + 11, p.y + 7);
-        ctx.lineTo(p.x + i + 5.5, p.y - 4); ctx.fill();
-      }
-    } else if (p.kind === "spring") {
-      ctx.fillStyle = "#4dabf7"; ctx.fillRect(p.x, p.y + 6, PLAT_W, PLAT_H - 6);
-      ctx.fillStyle = "#74c0fc";
-      ctx.fillRect(p.x + PLAT_W / 2 - 16, p.y, 32, 7);
-    } else {                                                     // melt（融化台階）
-      if (p.melt !== null) {
-        // 踩到後閃爍警告：剩越少閃越快；閃滅相位跳過不畫
-        const period = p.melt > 0.7 ? 320 : (p.melt > 0.3 ? 160 : 80);
-        if (Math.floor(performance.now() / period) % 2) continue;
-      }
-      ctx.fillStyle = "#f59f00"; ctx.fillRect(p.x, p.y, PLAT_W, PLAT_H);
-      ctx.fillStyle = "#ffd8a8";                                 // 融化滴落感
-      for (let i = 8; i < PLAT_W; i += 22)
-        ctx.fillRect(p.x + i, p.y + PLAT_H, 6, 5 + (i % 3) * 2);
-      ctx.fillStyle = "#fff3bf"; ctx.fillRect(p.x, p.y, PLAT_W, 4);
+  heartsEl.innerHTML = html;
+}
+
+// ── 遊戲世界繪製 ────────────────────────────────────
+let bgScrollOffset = 0;
+
+function drawBackground(scrollSpeed, dt) {
+  bgScrollOffset = (bgScrollOffset + scrollSpeed * dt * 0.7) % 36;
+  
+  // 深邃井洞背景
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, "#191428");
+  grad.addColorStop(1, "#0d0918");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // 垂直縫隙與石磚紋路（向下視差流動）
+  ctx.fillStyle = "rgba(76, 56, 110, 0.14)";
+  for (let y = -36; y < H + 36; y += 36) {
+    const rowY = y - bgScrollOffset;
+    for (let x = ((Math.floor(y / 36) % 2) * 25); x < W; x += 50) {
+      ctx.fillRect(x, rowY, 22, 14);
     }
   }
-  // 玩家（受傷無敵幀閃爍）
-  if (!(s.iframe > 0 && Math.floor(performance.now() / 90) % 2)) {
-    ctx.fillStyle = "#ffd43b"; ctx.fillRect(s.player_x, s.player_y, PW, PH);
-    ctx.fillStyle = "#1b1b1b";
-    ctx.fillRect(s.player_x + 5, s.player_y + 7, 4, 4);
-    ctx.fillRect(s.player_x + 15, s.player_y + 7, 4, 4);
-    ctx.fillRect(s.player_x + 7, s.player_y + 16, 10, 3);
-    ctx.fillStyle = "#e8590c"; ctx.fillRect(s.player_x + 2, s.player_y - 5, 20, 6); // 帽子
+
+  // 兩側深淵立體漸層陰影（營造垂直天井深邃感）
+  const leftShadow = ctx.createLinearGradient(0, 0, 36, 0);
+  leftShadow.addColorStop(0, "rgba(0, 0, 0, 0.65)");
+  leftShadow.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = leftShadow;
+  ctx.fillRect(0, 0, 36, H);
+
+  const rightShadow = ctx.createLinearGradient(W, 0, W - 36, 0);
+  rightShadow.addColorStop(0, "rgba(0, 0, 0, 0.65)");
+  rightShadow.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = rightShadow;
+  ctx.fillRect(W - 36, 0, 36, H);
+}
+
+function drawCeilingSpikes() {
+  const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 150);
+  // 天花板紅色警戒光暈
+  const warnGrad = ctx.createLinearGradient(0, 0, 0, CEIL_Y + 18);
+  warnGrad.addColorStop(0, `rgba(239, 68, 68, ${0.35 * pulse})`);
+  warnGrad.addColorStop(1, "rgba(239, 68, 68, 0)");
+  ctx.fillStyle = warnGrad;
+  ctx.fillRect(0, 0, W, CEIL_Y + 18);
+
+  // 天花板鋼樑基底
+  ctx.fillStyle = "#2d1f3b";
+  ctx.fillRect(0, 0, W, 8);
+  ctx.fillStyle = "#ff6b6b";
+  ctx.fillRect(0, 7, W, 2);
+
+  // 尖銳紅金屬錐刺
+  const spikeW = 20;
+  for (let x = 0; x < W; x += spikeW) {
+    const spikeGrad = ctx.createLinearGradient(x, 0, x + spikeW, CEIL_Y);
+    spikeGrad.addColorStop(0, "#b91c1c");
+    spikeGrad.addColorStop(0.5, "#ef4444");
+    spikeGrad.addColorStop(1, "#fca5a5");
+    ctx.fillStyle = spikeGrad;
+
+    ctx.beginPath();
+    ctx.moveTo(x, 8);
+    ctx.lineTo(x + spikeW, 8);
+    ctx.lineTo(x + spikeW / 2, CEIL_Y);
+    ctx.closePath();
+    ctx.fill();
+
+    // 錐刺高光稜線
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + spikeW / 2, 8);
+    ctx.lineTo(x + spikeW / 2, CEIL_Y);
+    ctx.stroke();
   }
+}
+
+function drawPlatform(p) {
+  const x = p.x, y = p.y, w = PLAT_W, h = PLAT_H;
+
+  if (p.kind === "normal") {
+    // 🟫 普通台階：溫潤木質紋理與雙層高光厚度
+    ctx.fillStyle = "#3e2716";
+    ctx.fillRect(x + 2, y + 2, w, h); // 柔和下陰影
+
+    const woodGrad = ctx.createLinearGradient(x, y, x, y + h);
+    woodGrad.addColorStop(0, "#9c6d3d");
+    woodGrad.addColorStop(0.3, "#7a4e25");
+    woodGrad.addColorStop(1, "#543314");
+    ctx.fillStyle = woodGrad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 4);
+    ctx.fill();
+
+    // 頂部金黃高光
+    ctx.fillStyle = "rgba(255, 226, 175, 0.45)";
+    ctx.fillRect(x + 2, y + 1, w - 4, 2);
+
+    // 木紋細線條
+    ctx.fillStyle = "rgba(40, 20, 5, 0.35)";
+    ctx.fillRect(x + 12, y + 5, w - 24, 1.5);
+    ctx.fillRect(x + 20, y + 9, w - 40, 1.5);
+
+    // 兩端木質鉚釘修飾
+    ctx.fillStyle = "#38230f";
+    ctx.beginPath(); ctx.arc(x + 6, y + h / 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + w - 6, y + h / 2, 1.8, 0, Math.PI * 2); ctx.fill();
+
+  } else if (p.kind === "spike") {
+    // 🔺 尖刺台階：金屬深灰鋼板底座 + 鋒利血紅尖牙
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.roundRect(x, y + 6, w, h - 6, 3);
+    ctx.fill();
+
+    // 金屬釘孔
+    ctx.fillStyle = "#94a3b8";
+    for (let rx = x + 8; rx < x + w; rx += 18) {
+      ctx.beginPath(); ctx.arc(rx, y + 10, 1.2, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 連續鋼針
+    const count = 7;
+    const sw = w / count;
+    for (let i = 0; i < count; i++) {
+      const sx = x + i * sw;
+      const sGrad = ctx.createLinearGradient(sx, y + 6, sx + sw / 2, y - 5);
+      sGrad.addColorStop(0, "#7f1d1d");
+      sGrad.addColorStop(0.4, "#dc2626");
+      sGrad.addColorStop(1, "#fca5a5");
+      ctx.fillStyle = sGrad;
+
+      ctx.beginPath();
+      ctx.moveTo(sx, y + 7);
+      ctx.lineTo(sx + sw, y + 7);
+      ctx.lineTo(sx + sw / 2, y - 5);
+      ctx.closePath();
+      ctx.fill();
+
+      // 鋒刃光芒
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(sx + sw / 2, y - 5);
+      ctx.lineTo(sx + sw / 2, y + 6);
+      ctx.stroke();
+    }
+
+  } else if (p.kind === "spring") {
+    // 🟦 彈簧台階：科技藍底座 + 機械可動彈簧線圈
+    ctx.fillStyle = "#0c4a6e";
+    ctx.beginPath();
+    ctx.roundRect(x, y + 6, w, h - 6, 3);
+    ctx.fill();
+
+    // 彈簧線圈（中央金屬圈）
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2 - 14, y + 6);
+    ctx.lineTo(x + w / 2 - 7, y + 2);
+    ctx.lineTo(x + w / 2, y + 6);
+    ctx.lineTo(x + w / 2 + 7, y + 2);
+    ctx.lineTo(x + w / 2 + 14, y + 6);
+    ctx.stroke();
+
+    // 彈跳推動頂板
+    const padGrad = ctx.createLinearGradient(x + 12, y, x + w - 12, y + 6);
+    padGrad.addColorStop(0, "#0284c7");
+    padGrad.addColorStop(0.5, "#38bdf8");
+    padGrad.addColorStop(1, "#0284c7");
+    ctx.fillStyle = padGrad;
+    ctx.beginPath();
+    ctx.roundRect(x + 12, y, w - 24, 6, 3);
+    ctx.fill();
+
+    // 彈簧呼吸光
+    ctx.fillStyle = "rgba(56, 189, 248, 0.6)";
+    ctx.fillRect(x + 16, y + 1, w - 32, 1.5);
+
+  } else {
+    // 🟧 融化台階：脆弱熔岩石塊，踩到後急速崩解
+    if (p.melt !== null) {
+      const period = p.melt > 0.7 ? 260 : (p.melt > 0.3 ? 120 : 60);
+      if (Math.floor(performance.now() / period) % 2 === 0) {
+        // 閃滅相位仍繪製半透明虛線輪廓，提醒玩家
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+      }
+      if (Math.random() < 0.25) spawnMeltDebris(x, y);
+    }
+
+    const meltGrad = ctx.createLinearGradient(x, y, x, y + h);
+    meltGrad.addColorStop(0, "#fb923c");
+    meltGrad.addColorStop(0.4, "#ea580c");
+    meltGrad.addColorStop(1, "#9a3412");
+    ctx.fillStyle = meltGrad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 3);
+    ctx.fill();
+
+    // 岩漿滴落感邊緣
+    ctx.fillStyle = "#fed7aa";
+    for (let i = 8; i < w; i += 18) {
+      const dropH = 4 + (i % 5) * 2;
+      ctx.beginPath();
+      ctx.roundRect(x + i, y + h, 5, dropH, [0, 0, 3, 3]);
+      ctx.fill();
+    }
+
+    // 表面碎裂裂紋（踩過後更密集）
+    ctx.strokeStyle = p.melt !== null ? "#fff7ed" : "#ffedd5";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 14, y + 2);
+    ctx.lineTo(x + 26, y + 8);
+    ctx.lineTo(x + 36, y + 4);
+    ctx.moveTo(x + 50, y + 10);
+    ctx.lineTo(x + 64, y + 3);
+    ctx.stroke();
+
+    if (p.melt !== null) ctx.restore();
+  }
+}
+
+function drawPlayer(s) {
+  const px = s.player_x, py = s.player_y;
+  
+  // 受傷無敵幀金光／半透明閃爍
+  if (s.iframe > 0) {
+    if (Math.floor(performance.now() / 70) % 2 === 0) return;
+  }
+
+  ctx.save();
+  // 角色變換中心點
+  ctx.translate(px + PW / 2, py + PH / 2);
+  ctx.scale(facing * playerSquashX, playerSquashY);
+
+  // 角色身邊的環境探險提燈光暈
+  const lanternGlow = ctx.createRadialGradient(0, 0, 8, 0, 0, 56);
+  lanternGlow.addColorStop(0, "rgba(255, 230, 150, 0.2)");
+  lanternGlow.addColorStop(1, "rgba(255, 230, 150, 0)");
+  ctx.fillStyle = lanternGlow;
+  ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.fill();
+
+  // 若處於無敵狀態，額外加上電光金黃護盾環
+  if (s.iframe > 0) {
+    ctx.strokeStyle = "rgba(255, 215, 0, 0.85)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 背包
+  ctx.fillStyle = "#854d0e";
+  ctx.beginPath();
+  ctx.roundRect(-PW / 2 - 3, -4, 4, 14, 2);
+  ctx.fill();
+
+  // 身體與臉蛋（圓角可愛造型）
+  const bodyGrad = ctx.createLinearGradient(-PW / 2, -PH / 2, PW / 2, PH / 2);
+  bodyGrad.addColorStop(0, "#fef08a");
+  bodyGrad.addColorStop(1, "#facc15");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.roundRect(-PW / 2, -PH / 2, PW, PH, 6);
+  ctx.fill();
+
+  // 探險棒球帽
+  ctx.fillStyle = "#ea580c";
+  ctx.beginPath();
+  ctx.roundRect(-PW / 2 - 1, -PH / 2 - 5, PW + 2, 7, [4, 4, 1, 1]);
+  ctx.fill();
+  // 帽簷
+  ctx.fillStyle = "#c2410c";
+  ctx.beginPath();
+  ctx.roundRect(1, -PH / 2 - 1, 14, 3, 1.5);
+  ctx.fill();
+
+  // 眼睛表情
+  ctx.fillStyle = "#1e1e24";
+  if (s.iframe > 0) {
+    // 受傷暈眩眼 (> <)
+    ctx.strokeStyle = "#1e1e24";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(1, -2); ctx.lineTo(6, 2);
+    ctx.moveTo(6, -2); ctx.lineTo(1, 2);
+    ctx.moveTo(9, -2); ctx.lineTo(14, 2);
+    ctx.moveTo(14, -2); ctx.lineTo(9, 2);
+    ctx.stroke();
+  } else {
+    // 炯炯有神的探險眼睛
+    ctx.beginPath(); ctx.arc(4, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(12, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    // 眼睛高光
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(4.8, -0.6, 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(12.8, -0.6, 0.8, 0, Math.PI * 2); ctx.fill();
+
+    // 臉頰粉嫩腮紅
+    ctx.fillStyle = "rgba(244, 63, 94, 0.35)";
+    ctx.beginPath(); ctx.arc(1, 4, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(15, 4, 2.2, 0, Math.PI * 2); ctx.fill();
+
+    // 微笑小嘴巴
+    ctx.strokeStyle = "#713f12";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(8, 4.5, 3.2, 0.1, Math.PI - 0.1);
+    ctx.stroke();
+  }
+
+  // 藍色休閒吊帶褲
+  ctx.fillStyle = "#2563eb";
+  ctx.beginPath();
+  ctx.roundRect(-PW / 2, 4, PW, 8, [0, 0, 4, 4]);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawMilestoneBanner() {
+  if (milestoneTimer <= 0 || !milestoneText) return;
+  ctx.save();
+  const progress = milestoneTimer / 1.5; // 1.5 秒倒數
+  const alpha = Math.min(1, progress * 2);
+  ctx.globalAlpha = alpha;
+  
+  ctx.fillStyle = "rgba(18, 12, 34, 0.85)";
+  ctx.strokeStyle = "#f59e0b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(W / 2 - 110, 80, 220, 36, 18);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#fef08a";
+  ctx.font = "bold 14px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(milestoneText, W / 2, 103);
+  ctx.restore();
+}
+
+function drawGameOver(s) {
+  // 半透明深邃暗化遮罩
+  ctx.fillStyle = "rgba(10, 7, 18, 0.82)";
+  ctx.fillRect(0, 0, W, H);
+
+  // 結算卡片本體
+  const cardW = 310, cardH = 260, cardX = (W - cardW) / 2, cardY = H / 2 - 140;
+  
+  ctx.fillStyle = "rgba(28, 22, 44, 0.95)";
+  ctx.strokeStyle = isNewRecord ? "rgba(255, 209, 102, 0.7)" : "rgba(147, 112, 219, 0.4)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, 16);
+  ctx.fill();
+  ctx.stroke();
+
+  // 頂部徽飾
+  ctx.textAlign = "center";
+  ctx.font = "bold 26px sans-serif";
+  ctx.fillStyle = "#fff";
+  ctx.fillText("💀 探險結束", W / 2, cardY + 44);
+
+  // 破紀錄彩帶提示
+  if (isNewRecord && s.floors > 0) {
+    ctx.fillStyle = "#ffd166";
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillText("🏆 NEW RECORD! 創下新紀錄！", W / 2, cardY + 74);
+  } else {
+    ctx.fillStyle = "#a89ec4";
+    ctx.font = "13px sans-serif";
+    ctx.fillText("失足跌落或體力耗盡…", W / 2, cardY + 74);
+  }
+
+  // 樓層結算滾動顯示
+  if (gameOverRollScore < s.floors) {
+    gameOverRollScore = Math.min(s.floors, gameOverRollScore + Math.max(1, Math.ceil(s.floors / 20)));
+  }
+
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "14px monospace";
+  ctx.fillText("本次深度", W / 2, cardY + 112);
+
+  ctx.fillStyle = "#38bdf8";
+  ctx.font = "bold 38px monospace";
+  ctx.fillText(`${gameOverRollScore} F`, W / 2, cardY + 152);
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "13px sans-serif";
+  ctx.fillText(`歷史最佳：${best} F`, W / 2, cardY + 180);
+
+  // 點擊重新開始按鈕
+  const pulse = 0.9 + 0.1 * Math.sin(performance.now() / 180);
+  ctx.save();
+  ctx.translate(W / 2, cardY + 218);
+  ctx.scale(pulse, pulse);
+  
+  ctx.fillStyle = "#7c3aed";
+  ctx.beginPath();
+  ctx.roundRect(-85, -18, 170, 36, 18);
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 14px sans-serif";
+  ctx.fillText("🕹️ 點擊再玩一次", 0, 5);
+  ctx.restore();
+}
+
+// ── 主渲染主管 ──────────────────────────────────────
+function draw(s, dt) {
+  // 畫面微震
+  ctx.save();
+  if (screenShake > 0) {
+    const sx = (Math.random() - 0.5) * screenShake * 2;
+    const sy = (Math.random() - 0.5) * screenShake * 2;
+    ctx.translate(sx, sy);
+    screenShake = Math.max(0, screenShake - dt * 25);
+  }
+
+  // 背景
+  const currentSpeed = s.alive ? (fallbackGame ? fallbackGame.scroll_speed() : (pyodide ? +py("game.scroll_speed()") : 58)) : 0;
+  drawBackground(currentSpeed, dt);
+
+  // 垂直速度風線（深度超過 20 層時營造下墜快感）
+  if (s.floors > 20 && s.alive) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    for (let i = 0; i < 5; i++) {
+      const lx = (i * 73 + (performance.now() * 0.1) % W) % W;
+      const ly = (performance.now() * 0.4 + i * 90) % H;
+      ctx.fillRect(lx, ly, 1.5, 28);
+    }
+  }
+
+  // 台階
+  for (const p of s.platforms) {
+    drawPlatform(p);
+  }
+
+  // 粒子
+  updateAndDrawParticles(dt);
+
+  // 角色
+  if (s.alive) {
+    drawPlayer(s);
+  }
+
+  // 天花板尖刺
+  drawCeilingSpikes();
+
+  // 里程碑浮動標語
+  if (milestoneTimer > 0) {
+    milestoneTimer -= dt;
+    drawMilestoneBanner();
+  }
+
+  ctx.restore();
+
+  // 死亡結算卡片
   if (!s.alive) {
-    ctx.fillStyle = "rgba(0,0,0,.65)"; ctx.fillRect(0, H / 2 - 90, W, 130);
-    ctx.fillStyle = "#fff"; ctx.font = "bold 28px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("💀 遊戲結束", W / 2, H / 2 - 48);
-    ctx.font = "20px sans-serif";
-    ctx.fillText(`到達 ${s.floors} 層 ・ 最佳 ${best}`, W / 2, H / 2 - 14);
-    ctx.font = "16px sans-serif";
-    ctx.fillText("點擊重新開始", W / 2, H / 2 + 16);
+    drawGameOver(s);
   }
 }
 
@@ -159,40 +1162,119 @@ function draw(s) {
 let prev = null, lastState = null;
 function loop(t) {
   try {
-    const dt = Math.min((t - last) / 1000, 0.05); last = t;
+    const dt = Math.min((t - last) / 1000, 0.05);
+    last = t;
     const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-    py(`game.step(${dt.toFixed(5)}, ${dir})`);
-    const s = getState(); lastState = s;
+    
+    // 平滑 Squash & Stretch 回彈
+    playerSquashX += (1.0 - playerSquashX) * Math.min(1, dt * 14);
+    playerSquashY += (1.0 - playerSquashY) * Math.min(1, dt * 14);
+
+    stepGame(dt, dir);
+    const s = getState();
+    lastState = s;
+
+    // 狀態反饋事件偵測
     if (prev) {
-      if (s.hp < prev.hp) beep(220, .25, "sawtooth", .15, -120);
-      else if (s.hp > prev.hp) beep(660, .1, "triangle", .1);
-      if (s.vy < -300 && prev.vy >= 0) beep(500, .15, "square", .12, 300);   // 彈簧
-      if (s.floors > prev.floors && s.floors % 10 === 0) beep(880, .12, "triangle", .12);
+      // 受到傷害
+      if (s.hp < prev.hp) {
+        screenShake = 6;
+        playerSquashX = 1.3; playerSquashY = 0.7;
+        spawnHurtSparks(s.player_x + PW / 2, s.player_y + PH / 2);
+        triggerHaptic(40);
+        if (s.player_y <= CEIL_Y + 5) AudioSFX.ceilSlam();
+        else AudioSFX.hurt();
+      }
+      // 回復血量
+      else if (s.hp > prev.hp) {
+        AudioSFX.heal();
+      }
+
+      // 踩到彈簧
+      if (s.vy < -350 && prev.vy >= 0) {
+        playerSquashX = 0.75; playerSquashY = 1.45;
+        spawnSpringSparks(s.player_x + PW / 2, s.player_y + PH);
+        AudioSFX.spring();
+        triggerHaptic(20);
+      }
+      // 落地煙塵
+      else if (s.on_ground && !prev.on_ground && s.vy === 0) {
+        playerSquashX = 1.25; playerSquashY = 0.75;
+        spawnLandingDust(s.player_x + PW / 2, s.player_y + PH);
+        AudioSFX.land();
+      }
+
+      // 達到 10 層倍數里程碑
+      if (s.floors > prev.floors && s.floors > 0 && s.floors % 10 === 0) {
+        AudioSFX.milestone();
+        milestoneText = `⚡ FLOOR ${s.floors} SPEED UP! ⚡`;
+        milestoneTimer = 1.5;
+        triggerHaptic([30, 40, 30]);
+      }
+
+      // 遊戲死亡事件
       if (prev.alive && !s.alive) {
-        beep(160, .5, "sawtooth", .16, -120); deadAt = performance.now();
-        if (s.floors > best) { best = s.floors; saveBest("downstairs_best", best); bestEl.textContent = best; }
+        deadAt = performance.now();
+        screenShake = 10;
+        gameOverRollScore = 0;
+        triggerHaptic([60, 50, 80]);
+        if (s.floors > best) {
+          isNewRecord = true;
+          best = s.floors;
+          saveBest("downstairs_best", best);
+          bestEl.textContent = best;
+          AudioSFX.newRecord();
+          spawnRecordConfetti();
+        } else {
+          isNewRecord = false;
+          AudioSFX.gameOver();
+        }
       }
     }
+
     prev = s;
     floorsEl.textContent = s.floors;
-    drawHearts(s.hp);
-    draw(s);
+    renderHearts(s.hp);
+    draw(s, dt);
+
     requestAnimationFrame(loop);
-  } catch (err) { showFatal(err); }             // 凍結時給訊息，不無聲卡死
+  } catch (err) {
+    console.error("迴圈錯誤：", err);
+  }
 }
 
+// ── 初始化啟動 ──────────────────────────────────────
 (async () => {
-  pyodide = await loadPyodide();
-  const src = await (await fetch("downstairs.py")).text();
-  pyodide.runPython(src + "\ngame = Game()");
-  document.getElementById("loading").style.display = "none";
-  cv.style.display = "block";
+  const loadingView = document.getElementById("loading-view");
+  const loadingText = document.getElementById("loading-text");
+  try {
+    const loadPromise = (async () => {
+      if (typeof loadPyodide === "function") {
+        pyodide = await loadPyodide();
+        const res = await fetch("downstairs.py");
+        if (res.ok) {
+          const src = await res.text();
+          pyodide.runPython(src + "\ngame = Game()");
+          return;
+        }
+      }
+      throw new Error("Pyodide or downstairs.py not loaded");
+    })();
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Pyodide 載入逾時")), 4500)
+    );
+
+    await Promise.race([loadPromise, timeoutPromise]);
+  } catch (err) {
+    console.warn("切換至內建物理演算引擎：", err);
+    fallbackGame = new FallbackGame();
+  }
+
+  if (loadingView) loadingView.style.display = "none";
   last = performance.now();
   requestAnimationFrame(loop);
-})().catch(err => {
-  document.getElementById("loading").textContent =
-    "載入失敗：" + err + "（若是本機直接開啟檔案，請改用 python3 -m http.server 後從 http://localhost:8000 開啟）";
-});
+})();
 </script>
 </body>
 </html>

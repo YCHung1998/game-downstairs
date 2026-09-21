@@ -1,0 +1,6 @@
+{
+  "name": "小朋友下樓梯",
+  "description": "NS-Shaft 式經典下樓梯遊戲，物理與台階運算在瀏覽器中流暢運行",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
